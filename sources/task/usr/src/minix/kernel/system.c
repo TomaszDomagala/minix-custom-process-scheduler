@@ -618,10 +618,11 @@ void kernel_call_resume(struct proc *caller)
 /*===========================================================================*
  *                               sched_proc                                  *
  *===========================================================================*/
-int sched_proc(struct proc *p,
+int sched_proc(struct proc *p, /* so_2021 */
 			int priority,
 			int quantum,
-			int cpu)
+			int cpu,
+      char bid)
 {
 	/* Make sure the values given are within the allowed range.*/
 	if ((priority < TASK_Q && priority != -1) || priority > NR_SCHED_QUEUES)
@@ -629,6 +630,9 @@ int sched_proc(struct proc *p,
 
 	if (quantum < 1 && quantum != -1)
 		return(EINVAL);
+
+  if (bid > MAX_BID || (bid < 0 && bid != -1))
+    return(EINVAL);
 
 #ifdef CONFIG_SMP
 	if ((cpu < 0 && cpu != -1) || (cpu > 0 && (unsigned) cpu >= ncpus))
@@ -661,6 +665,8 @@ int sched_proc(struct proc *p,
 
 	if (priority != -1)
 		p->p_priority = priority;
+  if(bid != -1)
+    p->p_bid = bid;
 	if (quantum != -1) {
 		p->p_quantum_size_ms = quantum;
 		p->p_cpu_time_left = ms_2_cpu_time(quantum);

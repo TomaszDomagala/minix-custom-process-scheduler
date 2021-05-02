@@ -23,14 +23,23 @@ fi
 done
 
 ssh -p "${ssh_port}" root@localhost << EOF
-cd /usr/src/minix/servers/ipc || exit 1
-make && make install || exit 1
-cd /usr/src/minix/servers/pm || exit 1
-make && make install || exit 1
-cd /usr/src/lib/libc || exit 1
-make && make install || exit 1
-cd /usr/src/releasetools || exit 1
-make do-hdboot || exit 1
+
+cd /usr/src/minix/kernel    || exit 1
+make && make install    || exit 1
+
+cd /usr/src/minix/servers/ipc   || exit 1
+make && make install    || exit 1
+cd /usr/src/minix/servers/pm    || exit 1
+make && make install    || exit 1
+cd /usr/src/minix/servers/sched || exit 1
+make && make install    || exit 1
+
+cd /usr/src/lib/libc    || exit 1
+make && make install    || exit 1
+
+
+cd /usr/src/releasetools    || exit 1
+make do-hdboot  || exit 1
 
 echo "Rebooting. You can exit with Ctrl+C"
 reboot

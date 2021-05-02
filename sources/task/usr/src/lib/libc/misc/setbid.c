@@ -13,8 +13,7 @@ int setbid(int bid) {
     endpoint_t pm_pt;
     message m;
 
-    // TODO add MAX_BID constant variable
-    if (bid < 0 || bid > 100) {
+    if (bid < 0 || bid > MAX_BID) {
         errno = EINVAL;
         return -1;
     }
@@ -22,11 +21,7 @@ int setbid(int bid) {
         errno = ENOSYS;
         return -1;
     }
-    m.m_setbid.bid = bid;
-    if (_syscall(pm_pt, PM_SETBID, &m) < 0) {
-        errno = ENOSYS;
-        return -1;
-    }
-
-    return m.m_setbid.bid;
+    m.m_lsys_pm_setbid.bid = bid;
+    
+    return _syscall(pm_pt, PM_SETBID, &m); 
 }

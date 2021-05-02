@@ -988,8 +988,9 @@ typedef struct {
 	int quantum;
 	int priority;
 	int cpu;
+	char bid;
 
-	uint8_t padding[40];
+	uint8_t padding[39];
 } mess_lsys_krn_schedule;
 _ASSERT_MSG_SIZE(mess_lsys_krn_schedule);
 
@@ -2026,8 +2027,16 @@ _ASSERT_MSG_SIZE(mess_vmmcp_reply);
 typedef struct {
 	int bid;
 	uint8_t padding[52];
-} mess_setbid;
-_ASSERT_MSG_SIZE(mess_setbid);
+} mess_lsys_pm_setbid;
+_ASSERT_MSG_SIZE(mess_lsys_pm_setbid);
+
+typedef struct {
+	int bid;
+	endpoint_t endpoint;
+	uint8_t padding[48];
+} mess_pm_sched_setbid;
+_ASSERT_MSG_SIZE(mess_pm_sched_setbid);
+
 
 typedef struct {
 	endpoint_t m_source;		/* who sent the message */
@@ -2257,7 +2266,8 @@ typedef struct {
 		mess_vm_vfs_mmap	m_vm_vfs_mmap;
 		mess_vmmcp		m_vmmcp;
 		mess_vmmcp_reply	m_vmmcp_reply;
-		mess_setbid			m_setbid;
+		mess_lsys_pm_setbid	m_lsys_pm_setbid;
+		mess_pm_sched_setbid	m_pm_sched_setbid;
 
 		u8_t size[56];	/* message payload may have 56 bytes at most */
 	};

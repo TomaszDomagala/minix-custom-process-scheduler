@@ -7,9 +7,13 @@
 #include <unistd.h>
 
 int main() {
-  int n = 2;
-  int res = setbid(n);
+    int res;
 
-  assert(res == 2 * n);
-  printf("Test passed!\n");
+    // res = setbid(0);
+    // assert(res == 0);
+
+    res = setbid(300);
+    printf("res = %d, errno = %d\n", res, errno);
+
+    printf("Test passed!\n");
 }

@@ -69,6 +69,9 @@
 /* default scheduling quanta */
 #define USER_QUANTUM 200
 
+#define MAX_BID	100
+#define AUCTION_Q	8
+
 /* defualt user process cpu */
 #define USER_DEFAULT_CPU	-1 /* use the default cpu or do not change the
 				      current one */

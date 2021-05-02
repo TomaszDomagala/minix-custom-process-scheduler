@@ -25,17 +25,21 @@ static void balance_queues(minix_timer_t *tp);
 #define SCHEDULE_CHANGE_PRIO	0x1
 #define SCHEDULE_CHANGE_QUANTUM	0x2
 #define SCHEDULE_CHANGE_CPU	0x4
+#define SCHEDULE_CHANGE_BID	0x8
 
 #define SCHEDULE_CHANGE_ALL	(	\
 		SCHEDULE_CHANGE_PRIO	|	\
 		SCHEDULE_CHANGE_QUANTUM	|	\
-		SCHEDULE_CHANGE_CPU		\
+		SCHEDULE_CHANGE_CPU		|	\
+		SCHEDULE_CHANGE_BID		\
 		)
 
 #define schedule_process_local(p)	\
 	schedule_process(p, SCHEDULE_CHANGE_PRIO | SCHEDULE_CHANGE_QUANTUM)
 #define schedule_process_migrate(p)	\
 	schedule_process(p, SCHEDULE_CHANGE_CPU)
+#define schedule_process_mode(p)	\
+	schedule_process(p, SCHEDULE_CHANGE_PRIO | SCHEDULE_CHANGE_BID | SCHEDULE_CHANGE_QUANTUM)
 
 #define CPU_DEAD	-1
 
@@ -87,7 +91,7 @@ static void pick_cpu(struct schedproc * proc)
  *				do_noquantum				     *
  *===========================================================================*/
 
-int do_noquantum(message *m_ptr)
+int do_noquantum(message *m_ptr) /* so_2021 */
 {
 	register struct schedproc *rmp;
 	int rv, proc_nr_n;
@@ -99,8 +103,12 @@ int do_noquantum(message *m_ptr)
 	}
 
 	rmp = &schedproc[proc_nr_n];
-	if (rmp->priority < MIN_USER_Q) {
-		rmp->priority += 1; /* lower priority */
+	if (rmp->priority < MIN_USER_Q && rmp->bid == 0) {
+		/* lower priority */
+		if(rmp->priority == AUCTION_Q - 1)
+			rmp->priority += 2;
+		else
+			rmp->priority += 1; 
 	}
 
 	if ((rv = schedule_process_local(rmp)) != OK) {
@@ -112,7 +120,7 @@ int do_noquantum(message *m_ptr)
 /*===========================================================================*
  *				do_stop_scheduling			     *
  *===========================================================================*/
-int do_stop_scheduling(message *m_ptr)
+int do_stop_scheduling(message *m_ptr) /* so_2021 */
 {
 	register struct schedproc *rmp;
 	int proc_nr_n;
@@ -133,6 +141,7 @@ int do_stop_scheduling(message *m_ptr)
 	cpu_proc[rmp->cpu]--;
 #endif
 	rmp->flags = 0; /*&= ~IN_USE;*/
+	rmp->bid = 0;
 
 	return OK;
 }
@@ -197,6 +206,7 @@ int do_start_scheduling(message *m_ptr)
 		 * from the parent */
 		rmp->priority   = rmp->max_priority;
 		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
+		rmp->bid = 0;
 		break;
 		
 	case SCHEDULING_INHERIT:
@@ -209,6 +219,7 @@ int do_start_scheduling(message *m_ptr)
 
 		rmp->priority = schedproc[parent_nr_n].priority;
 		rmp->time_slice = schedproc[parent_nr_n].time_slice;
+		rmp->bid = schedproc[parent_nr_n].bid;
 		break;
 		
 	default: 
@@ -224,6 +235,7 @@ int do_start_scheduling(message *m_ptr)
 		return rv;
 	}
 	rmp->flags = IN_USE;
+	rmp->bid = 0;
 
 	/* Schedule the process, giving it some quantum */
 	pick_cpu(rmp);
@@ -301,6 +313,7 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 {
 	int err;
 	int new_prio, new_quantum, new_cpu;
+	char new_bid;
 
 	pick_cpu(rmp);
 
@@ -315,12 +328,17 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 		new_quantum = -1;
 
 	if (flags & SCHEDULE_CHANGE_CPU)
-		new_cpu = rmp->cpu;
+		new_cpu = (char) rmp->cpu;
 	else
 		new_cpu = -1;
 
+	if (flags & SCHEDULE_CHANGE_BID)
+		new_bid = rmp->bid;
+	else
+		new_bid = -1;
+
 	if ((err = sys_schedule(rmp->endpoint, new_prio,
-		new_quantum, new_cpu)) != OK) {
+		new_quantum, new_cpu, new_bid)) != OK) {
 		printf("PM: An error occurred when trying to schedule %d: %d\n",
 		rmp->endpoint, err);
 	}
@@ -349,19 +367,67 @@ void init_scheduling(void)
  * quantum. This function will find all proccesses that have been bumped down,
  * and pulls them back up. This default policy will soon be changed.
  */
-static void balance_queues(minix_timer_t *tp)
+static void balance_queues(minix_timer_t *tp) /* so_2021 */
 {
 	struct schedproc *rmp;
 	int proc_nr;
 
 	for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
-		if (rmp->flags & IN_USE) {
+		if (rmp->flags & IN_USE && rmp->bid == 0) {
 			if (rmp->priority > rmp->max_priority) {
-				rmp->priority -= 1; /* increase priority */
+				/* increase priority */
+				if(rmp->priority == AUCTION_Q + 1)
+					rmp->priority -= 2;
+				else
+					rmp->priority -= 1;
 				schedule_process_local(rmp);
 			}
 		}
 	}
 
 	set_timer(&sched_timer, balance_timeout, balance_queues, 0);
+}
+
+int handle_setbid(message *m_ptr){ /* so_2021 */
+	struct schedproc *rmp;
+	int rv;
+	int proc_nr_n;
+	unsigned new_q, old_q, new_bid, old_bid;
+
+	/* check who can send you requests */
+	if (!accept_message(m_ptr))
+		return EPERM;
+
+	if (sched_isokendpt(m_ptr->m_pm_sched_setbid.endpoint, &proc_nr_n) != OK) {
+		printf("SCHED: WARNING: got an invalid endpoint in OoQ msg "
+		"%d\n", m_ptr->m_pm_sched_setbid.endpoint);
+		return EBADEPT;
+	}
+
+	rmp = &schedproc[proc_nr_n];
+	new_bid = m_ptr->m_pm_sched_setbid.bid;
+	
+	if(rmp->bid > 0 && new_bid > 0){
+		return EPERM;
+	}
+	if(rmp->bid == 0 && new_bid == 0){
+		return EPERM;
+	}
+	
+	/* Store old values, in case we need to roll back the changes */
+	old_q = rmp->priority;
+	old_bid = rmp->bid;
+
+	/* Update the proc entry and reschedule the process */
+	rmp->bid = new_bid;
+	rmp->priority = new_bid > 0 ? AUCTION_Q : rmp->max_priority;
+
+	if ((rv = schedule_process_mode(rmp)) != OK) {
+		/* Something went wrong when rescheduling the process, roll
+		 * back the changes to proc struct */
+		rmp->priority = old_q;
+		rmp->bid = old_bid;	
+	}
+
+	return rv;
 }
