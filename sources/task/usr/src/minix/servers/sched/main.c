@@ -18,8 +18,7 @@ struct machine machine;		/* machine info */
 /*===========================================================================*
  *				main					     *
  *===========================================================================*/
-/* so_2021 */
-int main(void)
+int main(void) /* so_2021 */
 {
 	/* Main routine of the scheduler. */
 	message m_in;	/* the incoming message itself is kept here. */

@@ -4,7 +4,7 @@
 /*===========================================================================*
  *			          do_schedctl			     *
  *===========================================================================*/
-int do_schedctl(struct proc * caller, message * m_ptr)
+int do_schedctl(struct proc * caller, message * m_ptr) /* so_2021 */
 {
 	struct proc *p;
 	uint32_t flags;

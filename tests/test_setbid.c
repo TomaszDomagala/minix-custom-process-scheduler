@@ -12,7 +12,7 @@ int main() {
     // res = setbid(0);
     // assert(res == 0);
 
-    res = setbid(300);
+    res = setbid(1);
     printf("res = %d, errno = %d\n", res, errno);
 
     printf("Test passed!\n");

@@ -4,7 +4,7 @@ int sys_schedule(endpoint_t proc_ep, /* so_2021 */
 			int priority,
 			int quantum,
 			int cpu,
-			char bid)
+			int bid)
 {
 	message m;
 

@@ -5,11 +5,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-/* so_2021 */
-int get_pm_endpt(endpoint_t *pt) { return minix_rs_lookup("pm", pt); }
+int get_pm_endpt(endpoint_t *pt) { /* so_2021 */
+    return minix_rs_lookup("pm", pt);
+}
 
-/* so_2021 */
-int setbid(int bid) {
+int setbid(int bid) { /* so_2021 */
     endpoint_t pm_pt;
     message m;
 
@@ -22,6 +22,6 @@ int setbid(int bid) {
         return -1;
     }
     m.m_lsys_pm_setbid.bid = bid;
-    
-    return _syscall(pm_pt, PM_SETBID, &m); 
+    // printf("setbid bid = %d\n", m.m_lsys_pm_setbid.bid);
+    return _syscall(pm_pt, PM_SETBID, &m);
 }

@@ -173,6 +173,7 @@ int do_start_scheduling(message *m_ptr)
 	rmp->endpoint     = m_ptr->m_lsys_sched_scheduling_start.endpoint;
 	rmp->parent       = m_ptr->m_lsys_sched_scheduling_start.parent;
 	rmp->max_priority = m_ptr->m_lsys_sched_scheduling_start.maxprio;
+	rmp->bid = 0;
 	if (rmp->max_priority >= NR_SCHED_QUEUES) {
 		return EINVAL;
 	}
@@ -206,7 +207,6 @@ int do_start_scheduling(message *m_ptr)
 		 * from the parent */
 		rmp->priority   = rmp->max_priority;
 		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
-		rmp->bid = 0;
 		break;
 		
 	case SCHEDULING_INHERIT:
@@ -217,9 +217,12 @@ int do_start_scheduling(message *m_ptr)
 				&parent_nr_n)) != OK)
 			return rv;
 
-		rmp->priority = schedproc[parent_nr_n].priority;
+		if(schedproc[parent_nr_n].priority == AUCTION_Q){
+			rmp->priority = rmp->max_priority;
+		}else{
+			rmp->priority = schedproc[parent_nr_n].priority;
+		}
 		rmp->time_slice = schedproc[parent_nr_n].time_slice;
-		rmp->bid = schedproc[parent_nr_n].bid;
 		break;
 		
 	default: 
@@ -236,7 +239,6 @@ int do_start_scheduling(message *m_ptr)
 	}
 	rmp->flags = IN_USE;
 	rmp->bid = 0;
-
 	/* Schedule the process, giving it some quantum */
 	pick_cpu(rmp);
 	while ((rv = schedule_process(rmp, SCHEDULE_CHANGE_ALL)) == EBADCPU) {
@@ -266,7 +268,7 @@ int do_start_scheduling(message *m_ptr)
 /*===========================================================================*
  *				do_nice					     *
  *===========================================================================*/
-int do_nice(message *m_ptr)
+int do_nice(message *m_ptr) /* so_2021 */
 {
 	struct schedproc *rmp;
 	int rv;
@@ -287,6 +289,9 @@ int do_nice(message *m_ptr)
 	new_q = m_ptr->m_pm_sched_scheduling_set_nice.maxprio;
 	if (new_q >= NR_SCHED_QUEUES) {
 		return EINVAL;
+	}
+	if(new_q == AUCTION_Q){
+		new_q = AUCTION_Q + 1;
 	}
 
 	/* Store old values, in case we need to roll back the changes */
@@ -312,8 +317,7 @@ int do_nice(message *m_ptr)
 static int schedule_process(struct schedproc * rmp, unsigned flags)
 {
 	int err;
-	int new_prio, new_quantum, new_cpu;
-	char new_bid;
+	int new_prio, new_quantum, new_cpu, new_bid;
 
 	pick_cpu(rmp);
 
@@ -341,6 +345,7 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 		new_quantum, new_cpu, new_bid)) != OK) {
 		printf("PM: An error occurred when trying to schedule %d: %d\n",
 		rmp->endpoint, err);
+		printf("PM: priority = %d bid = %d, new_bid = %d\n",rmp->priority, rmp->bid, new_bid);
 	}
 
 	return err;
@@ -392,7 +397,8 @@ int handle_setbid(message *m_ptr){ /* so_2021 */
 	struct schedproc *rmp;
 	int rv;
 	int proc_nr_n;
-	unsigned new_q, old_q, new_bid, old_bid;
+	unsigned new_q, old_q;
+	int new_bid, old_bid;
 
 	/* check who can send you requests */
 	if (!accept_message(m_ptr))

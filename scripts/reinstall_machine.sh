@@ -24,6 +24,9 @@ done
 
 ssh -p "${ssh_port}" root@localhost << EOF
 
+cd /usr/src/minix/lib/libsys    || exit 1
+make && make install    || exit 1
+
 cd /usr/src/minix/kernel    || exit 1
 make && make install    || exit 1
 

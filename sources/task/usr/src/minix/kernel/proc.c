@@ -116,11 +116,11 @@ static void set_idle_name(char * name, int n)
 		break;							\
 	}
 
-void proc_init(void)
+void proc_init(void) /* so_2021 */
 {
 	struct proc * rp;
 	struct priv *sp;
-	int i;
+	int i, j;
 
 	/* Clear the process table. Announce each slot as empty and set up
 	 * mappings for proc_addr() and proc_nr() macros. Do the same for the
@@ -156,6 +156,14 @@ void proc_init(void)
 		ip->p_rts_flags |= RTS_PROC_STOP;
 		set_idle_name(ip->p_name, i);
 	}
+	/* initialize lowest unique bid queue for every cpu */
+	for (i = 0; i < CONFIG_MAX_CPUS; i++) {
+		for (j = 0; j < MAX_BID; ++j) {
+			get_cpu_var(i, lub_q_head)[j] = NULL;
+			get_cpu_var(i, lub_q_tail)[j] = NULL;
+		}
+	}
+	
 }
 
 static void switch_address_space_idle(void)
@@ -1520,10 +1528,30 @@ asyn_error:
   return(OK);
 }
 
+void fix_lub_queue(int cpu){ /* so_2021 */
+	struct proc **lub_head, **lub_tail, **rdy_head;
+
+	lub_head = get_cpu_var(cpu, lub_q_head);
+	lub_tail = get_cpu_var(cpu, lub_q_tail);
+	rdy_head = get_cpu_var(cpu, run_q_head);
+
+	struct proc *last_seen = NULL;
+
+	for (int i = 0; i < MAX_BID; i++) {
+		if(lub_head[i]){
+			last_seen = lub_head[i];
+			if(lub_head[i] == lub_tail[i]){
+				break;
+			}
+		}
+	}
+	rdy_head[AUCTION_Q] = last_seen;
+}
+
 /*===========================================================================*
  *				enqueue					     * 
  *===========================================================================*/
-void enqueue(
+void enqueue( /* so_2021 */
   register struct proc *rp	/* this process is now runnable */
 )
 {
@@ -1537,23 +1565,40 @@ void enqueue(
  */
   int q = rp->p_priority;	 		/* scheduling queue to use */
   struct proc **rdy_head, **rdy_tail;
+  struct proc **lub_head, **lub_tail;
   
   assert(proc_is_runnable(rp));
 
   assert(q >= 0);
 
-  rdy_head = get_cpu_var(rp->p_cpu, run_q_head);
-  rdy_tail = get_cpu_var(rp->p_cpu, run_q_tail);
+  if(q == AUCTION_Q){
+	int bid = rp->p_bid - 1;
+	lub_head = get_cpu_var(rp->p_cpu, lub_q_head);
+	lub_tail = get_cpu_var(rp->p_cpu, lub_q_tail);
 
-  /* Now add the process to the queue. */
-  if (!rdy_head[q]) {		/* add to empty queue */
-      rdy_head[q] = rdy_tail[q] = rp; 		/* create a new queue */
-      rp->p_nextready = NULL;		/* mark new end */
-  } 
-  else {					/* add to tail of queue */
-      rdy_tail[q]->p_nextready = rp;		/* chain tail of queue */	
-      rdy_tail[q] = rp;				/* set new queue tail */
-      rp->p_nextready = NULL;		/* mark new end */
+	if(!lub_head[bid]){ /* add to empty queue */
+		lub_head[bid] = lub_tail[bid] = rp;
+		rp->p_nextready = NULL;
+	} else {
+		lub_tail[bid]->p_nextready = rp;
+		lub_tail[bid] = rp;
+		rp->p_nextready = NULL;
+	}
+	fix_lub_queue(rp->p_cpu);
+  } else {
+	rdy_head = get_cpu_var(rp->p_cpu, run_q_head);
+	rdy_tail = get_cpu_var(rp->p_cpu, run_q_tail);
+
+	/* Now add the process to the queue. */
+	if (!rdy_head[q]) {		/* add to empty queue */
+		rdy_head[q] = rdy_tail[q] = rp; 		/* create a new queue */
+		rp->p_nextready = NULL;		/* mark new end */
+	} 
+	else {					/* add to tail of queue */
+		rdy_tail[q]->p_nextready = rp;		/* chain tail of queue */	
+		rdy_tail[q] = rp;				/* set new queue tail */
+		rp->p_nextready = NULL;		/* mark new end */
+	}
   }
 
   if (cpuid == rp->p_cpu) {
@@ -1598,11 +1643,12 @@ void enqueue(
  * process on a run queue. We have to put this process back at the fron to be
  * fair
  */
-static void enqueue_head(struct proc *rp)
+static void enqueue_head(struct proc *rp) /* so_2021 */
 {
   const int q = rp->p_priority;	 		/* scheduling queue to use */
 
   struct proc **rdy_head, **rdy_tail;
+  struct proc **lub_head, **lub_tail;
 
   assert(proc_ptr_ok(rp));
   assert(proc_is_runnable(rp));
@@ -1618,14 +1664,30 @@ static void enqueue_head(struct proc *rp)
 
   rdy_head = get_cpu_var(rp->p_cpu, run_q_head);
   rdy_tail = get_cpu_var(rp->p_cpu, run_q_tail);
+  
+  if(q == AUCTION_Q) {
+	int bid = rp->p_bid - 1;
+	lub_head = get_cpu_var(rp->p_cpu, lub_q_head);
+	lub_tail = get_cpu_var(rp->p_cpu, lub_q_tail);
 
-  /* Now add the process to the queue. */
-  if (!rdy_head[q]) {		/* add to empty queue */
-	rdy_head[q] = rdy_tail[q] = rp; 	/* create a new queue */
-	rp->p_nextready = NULL;			/* mark new end */
-  } else {					/* add to head of queue */
-	rp->p_nextready = rdy_head[q];		/* chain head of queue */
-	rdy_head[q] = rp;			/* set new queue head */
+	if(!lub_head[bid]){ /* add to empty queue */
+		lub_head[bid] = lub_tail[bid] = rp;
+		rp->p_nextready = NULL;
+	} else {
+		lub_tail[bid]->p_nextready = rp;
+		lub_tail[bid] = rp;
+		rp->p_nextready = NULL;
+	}
+	fix_lub_queue(rp->p_cpu);
+  }else{
+	/* Now add the process to the queue. */
+	if (!rdy_head[q]) {		/* add to empty queue */
+		rdy_head[q] = rdy_tail[q] = rp; 	/* create a new queue */
+		rp->p_nextready = NULL;			/* mark new end */
+	} else {					/* add to head of queue */
+		rp->p_nextready = rdy_head[q];		/* chain head of queue */
+		rdy_head[q] = rp;			/* set new queue head */
+	}
   }
 
   /* Make note of when this process was added to queue */
@@ -1659,7 +1721,8 @@ void dequeue(struct proc *rp)
   struct proc *prev_xp;
   u64_t tsc, tsc_delta;
 
-  struct proc **rdy_tail;
+  struct proc **tail;
+
 
   assert(proc_ptr_ok(rp));
   assert(!proc_is_runnable(rp));
@@ -1667,19 +1730,24 @@ void dequeue(struct proc *rp)
   /* Side-effect for kernel: check if the task's stack still is ok? */
   assert (!iskernelp(rp) || *priv(rp)->s_stack_guard == STACK_GUARD);
 
-  rdy_tail = get_cpu_var(rp->p_cpu, run_q_tail);
 
   /* Now make sure that the process is not in its ready queue. Remove the 
    * process if it is found. A process can be made unready even if it is not 
    * running by being sent a signal that kills it.
    */
-  prev_xp = NULL;				
-  for (xpp = get_cpu_var_ptr(rp->p_cpu, run_q_head[q]); *xpp;
-		  xpp = &(*xpp)->p_nextready) {
+  prev_xp = NULL;
+  if(q == AUCTION_Q){
+	  xpp = get_cpu_var_ptr(rp->p_cpu, lub_q_head[rp->p_bid - 1]);
+	  tail = &get_cpu_var(rp->p_cpu, lub_q_tail)[rp->p_bid - 1];
+  }else{
+	  xpp = get_cpu_var_ptr(rp->p_cpu, run_q_head[q]);
+	  tail = &get_cpu_var(rp->p_cpu, run_q_tail)[q];
+  }	
+  for (;*xpp; xpp = &(*xpp)->p_nextready) {
       if (*xpp == rp) {				/* found process to remove */
           *xpp = (*xpp)->p_nextready;		/* replace with next chain */
-          if (rp == rdy_tail[q]) {		/* queue tail removed */
-              rdy_tail[q] = prev_xp;		/* set new tail */
+          if (rp == *tail) {		/* queue tail removed */
+              *tail = prev_xp;		/* set new tail */
 	  }
 
           break;
@@ -1687,6 +1755,9 @@ void dequeue(struct proc *rp)
       prev_xp = *xpp;				/* save previous in chain */
   }
 
+  if(q == AUCTION_Q){
+	  fix_lub_queue(rp->p_cpu);
+  }
 	
   /* Process accounting for scheduling */
   rp->p_accounting.dequeues++;

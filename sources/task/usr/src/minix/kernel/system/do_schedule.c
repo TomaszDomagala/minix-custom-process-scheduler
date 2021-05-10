@@ -9,8 +9,7 @@ int do_schedule(struct proc * caller, message * m_ptr) /* so_2021 */
 {
 	struct proc *p;
 	int proc_nr;
-	int priority, quantum, cpu;
-	char bid;
+	int priority, quantum, cpu, bid;
 
 	if (!isokendpt(m_ptr->m_lsys_krn_schedule.endpoint, &proc_nr))
 		return EINVAL;

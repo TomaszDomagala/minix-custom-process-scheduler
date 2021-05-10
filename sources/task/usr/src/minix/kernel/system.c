@@ -622,7 +622,7 @@ int sched_proc(struct proc *p, /* so_2021 */
 			int priority,
 			int quantum,
 			int cpu,
-      char bid)
+      int bid)
 {
 	/* Make sure the values given are within the allowed range.*/
 	if ((priority < TASK_Q && priority != -1) || priority > NR_SCHED_QUEUES)
@@ -665,7 +665,7 @@ int sched_proc(struct proc *p, /* so_2021 */
 
 	if (priority != -1)
 		p->p_priority = priority;
-  if(bid != -1)
+  if (bid != -1)
     p->p_bid = bid;
 	if (quantum != -1) {
 		p->p_quantum_size_ms = quantum;
